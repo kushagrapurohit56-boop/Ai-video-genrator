@@ -430,24 +430,41 @@ def create_video(script_text: str, title: str, audio_path: str, output_path: str
     else:
         bg_video = ColorClip(size=(WIDTH, HEIGHT), color=BG_COLOR, duration=total_duration)
 
-    # ── Create Subtitle Overlays (Positioned via start times) ───────────────────
-    print(f"    Generating subtitle overlays...")
-    overlay_clips = []
-    
+    # ── Pre-render Subtitle Overlay Images ──────────────────────────────────────
+    print(f"    Pre-rendering subtitle overlays in memory...")
+    subtitle_overlays = []
     for i, chunk in enumerate(chunks):
         start_t = i * chunk_dur
-        end_t = min(start_t + chunk_dur, total_duration)
-        dur = end_t - start_t
-        if dur <= 0:
-            continue
-            
+        end_t = start_t + chunk_dur
         overlay_img = build_overlay(title, chunk)
         overlay_arr = np.array(overlay_img)
-        
-        overlay_clip = ImageClip(overlay_arr).with_duration(dur).with_start(start_t)
-        overlay_clips.append(overlay_clip)
+        subtitle_overlays.append((start_t, end_t, overlay_arr))
 
-    final_video = CompositeVideoClip([bg_video] + overlay_clips)
+    # A single frame-level function that dynamically selects and overlays the text based on current time
+    def draw_subtitles(get_frame, t):
+        frame = get_frame(t)
+        if frame.dtype != np.uint8:
+            frame = frame.astype(np.uint8)
+            
+        # Find matching overlay
+        active_ov = None
+        for start_t, end_t, ov_arr in subtitle_overlays:
+            if start_t <= t < end_t:
+                active_ov = ov_arr
+                break
+                
+        if active_ov is None:
+            return frame
+
+        # Apply overlay using PIL
+        bg = Image.fromarray(frame).convert("RGBA")
+        if bg.width != WIDTH or bg.height != HEIGHT:
+            bg = bg.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+        bg.alpha_composite(Image.fromarray(active_ov))
+        return np.array(bg.convert("RGB"))
+
+    # Apply the transform to the background video
+    final_video = bg_video.transform(draw_subtitles)
 
     # ── Mix Background Music & Voiceover ─────────────────────────────────────
     print("    Mixing audio track with background music...")
