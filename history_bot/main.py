@@ -464,7 +464,7 @@ def create_video(script_text: str, title: str, audio_path: str, output_path: str
         return np.array(bg.convert("RGB"))
 
     # Apply the transform to the background video
-    final_video = bg_video.transform(draw_subtitles)
+    final_video = bg_video.fl(draw_subtitles)
 
     # ── Mix Background Music & Voiceover ─────────────────────────────────────
     print("    Mixing audio track with background music...")
